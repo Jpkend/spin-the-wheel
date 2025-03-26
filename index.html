@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Wheel of Fortune with Points &amp; Groups</title>
+  <!-- Link to external CSS file -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <h1>Spin the Wheel</h1>
+
+  <!-- Audio elements -->
+  <audio id="spinSound" src="spin.mp3" preload="auto"></audio>
+  <audio id="resultSound" src="result.mp3" preload="auto"></audio>
+
+  <div id="mainContainer">
+    <!-- ITEMS TABLE: Label + Points -->
+      <div id="itemsTableContainer">
+      <table id="itemsTable">
+        <thead>
+          <tr>
+            <th>Item</th>
+            <th>Points</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- We'll add one default row in JS with placeholder -->
+        </tbody>
+      </table>
+    </div>
+
+    <div>
+      <button id="addRowBtn">Add Row</button>
+      <button id="updateWheelBtn">Update Wheel (Reset)</button>
+      <label style="margin-left:1em;">
+        <input type="checkbox" id="removeCheckbox">
+        Remove Landed Item (Next Spin)
+      </label>
+    </div>
+
+    <!-- GROUPS Config (allow 0) -->
+    <div>
+      <label>Number of Groups:
+        <input type="number" id="numGroupsInput" min="0" value="2" style="width:60px">
+      </label>
+      <button id="setGroupsBtn">Set Groups</button>
+      <button id="clearAllBtn">Clear All Points</button>
+      <span id="turnIndicator" style="margin-left:1em;">Group 1's Turn</span>
+    </div>
+    <div id="groupsContainer"></div>
+
+    <!-- Spin button, then result, then wheel (centered) -->
+    <button id="spinBtn">Spin</button>
+    <div id="result">Result:</div>
+
+    <div id="wheelContainer">
+      <canvas id="wheel" width="500" height="500"></canvas>
+      <!-- The big black arrow on the right side -->
+      <div id="indicator"><</div>
+    </div>
+  </div>
+
+  <!-- Reference external script -->
+  <script src="script.js"></script>
+</body>
+</html>

@@ -1,0 +1,159 @@
+/* Basic layout & styling */
+body {
+  font-family: sans-serif;
+  background: #f0f8ff;
+  margin: 0;
+  padding: 1em;
+}
+
+h1 {
+  text-align: center;
+  margin: 0.5em 0;
+}
+
+#mainContainer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 900px;
+  margin: 0 auto;
+  gap: 1em;
+}
+
+/* Table for Items (Item + Points) */
+#itemsTableContainer {
+  width: 100%;
+  overflow-x: auto; /* If table is wide, allow horizontal scroll */
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 400px;
+}
+
+th, td {
+  border: 1px solid #ccc;
+  padding: 0.5em;
+  text-align: left;
+}
+
+th {
+  background: #eee;
+}
+
+td button.removeRowBtn {
+  background: #f44336;
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  padding: 0.3em 0.5em;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+td button.removeRowBtn:hover {
+  background: #d32f2f;
+}
+
+/* Groups / Score UI */
+#groupsContainer {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 1em;
+  margin-top: 0.5em;
+  justify-content: center;
+}
+
+.group-row {
+  display: flex;
+  gap: 1em;
+  justify-content: center;
+}
+
+/* Each group: vertical stack of name input on top, score below */
+.group-input {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  border: 1px solid #ccc;
+  padding: 0.5em;
+  border-radius: 4px;
+  min-width: 100px;
+  background: #fff;
+  transition: border 0.3s ease;
+}
+
+/* highlight the current turn with a red border */
+.active-turn {
+  border: 2px solid red !important;
+}
+
+.group-name {
+  margin-bottom: 0.3em;
+  width: 100%;
+  text-align: center;
+  font-weight: bold;
+  font-size: 1em;
+}
+
+.group-score {
+  font-size: 1.1em;
+  font-weight: normal;
+}
+
+/* Spin button above the result text */
+#spinBtn {
+  margin-bottom: 0.5em;
+}
+
+/* The result text sits above the wheel, center-aligned */
+#result {
+  font-size: 2em;
+  font-weight: bold;
+  min-width: 220px;
+  text-align: center;
+  margin-bottom: 0.5em;
+}
+
+/* Wheel area with arrow on the right side */
+#wheelContainer {
+  position: relative;
+  display: inline-block;
+}
+
+#wheel {
+  border: 2px solid #333;
+  border-radius: 50%;
+  background: #fff;
+  width: 500px;
+  height: 500px;
+  display: block;
+}
+
+/* The arrow on the right side: bigger, black, bold */
+#indicator {
+  position: absolute;
+  right: -36px;  /* push further to the right so it doesn't overlap the wheel */
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 2em;        /* bigger */
+  font-weight: bold;     /* bold */
+  color: #000;           /* black */
+  pointer-events: none;
+}
+
+#turnIndicator {
+  font-weight: bold;
+  margin-left: 1em;
+}
+
+/* Basic button styling */
+button {
+  cursor: pointer;
+}
+
+button:hover {
+  opacity: 0.9;
+}

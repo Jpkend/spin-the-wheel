@@ -1,137 +1,162 @@
-// ===== DOM References =====
-const itemsTable       = document.getElementById('itemsTable');
-const addRowBtn        = document.getElementById('addRowBtn');
-const updateWheelBtn   = document.getElementById('updateWheelBtn');
-const removeCb         = document.getElementById('removeCheckbox');
+/*********************************************************************
+ * script.js
+ *
+ * Spin the Wheel Tool with Teams using a single textarea input.
+ * Each line in the textarea should be: Item name (points)
+ * Example: What is your name? (100)
+ *
+ * The wheel spins for 3 seconds and the winning item’s points
+ * are added to the current team’s score. Optionally, the winning
+ * item is removed from the list.
+ *********************************************************************/
 
-const numGroupsInput   = document.getElementById('numGroupsInput');
-const setGroupsBtn     = document.getElementById('setGroupsBtn');
-const clearAllBtn      = document.getElementById('clearAllBtn');
-const groupsContainer  = document.getElementById('groupsContainer');
+// DOM Elements
+const itemsInput = document.getElementById("itemsInput");
+const spinBtn = document.getElementById("spinBtn");
+const wheelCanvas = document.getElementById("wheel");
+const resultEl = document.getElementById("result");
+const spinSound = document.getElementById("spinSound");
+const bellSound = document.getElementById("bellSound");
+const numGroupsInput = document.getElementById("numGroupsInput");
+const setGroupsBtn = document.getElementById("setGroupsBtn");
+const clearAllBtn = document.getElementById("clearAllBtn");
+const turnIndicator = document.getElementById("turnIndicator");
+const groupsContainer = document.getElementById("groupsContainer");
 
-const spinBtn          = document.getElementById('spinBtn');
-const turnIndicator    = document.getElementById('turnIndicator');
-const resultEl         = document.getElementById('result');
+const ctx = wheelCanvas.getContext("2d");
 
-const spinSound        = document.getElementById('spinSound');
-const resultSound      = document.getElementById('resultSound');
-
-const wheelCanvas      = document.getElementById('wheel');
-const ctx              = wheelCanvas.getContext('2d');
-
-// ===== Data Structures =====
-let items = [];           // array of { label, points, color }
-let excludedLabels = [];  // items "removed" from the wheel
-let groups = [];          // array of { name, score, scoreEl }
-let currentGroupIndex = 0;
-let currentRotation = 0;  // in degrees
+let items = []; // array of objects { name, points }
+let currentRotation = 0; // in radians
 let isSpinning = false;
-let pendingRemoval = null; // label to remove from wheel on next spin
+let pendingRemoval = null; // winning item's name to remove on next spin if checkbox is checked
 
-// ====== UTILS ======
-function randomPastelColor() {
-  const hue = Math.floor(Math.random() * 360);
-  return `hsl(${hue}, 70%, 85%)`;
+// Teams (groups) variables
+let groups = []; // array of objects { name, score, scoreEl }
+let currentGroupIndex = 0;
+
+// Story dice not used in this version (we're back to text items)
+
+// Parse textarea input. Each line should be "Item (points)".
+function parseItems() {
+  const input = itemsInput.value;
+  const lines = input.split("\n").map(line => line.trim()).filter(line => line.length > 0);
+  const parsed = lines.map(line => {
+    // Regex: capture text, optionally followed by points in parentheses.
+    const match = line.match(/^(.*?)(?:\s*\((\d+)\))?$/);
+    if (match) {
+      const itemName = match[1].trim();
+      const points = match[2] ? parseInt(match[2], 10) : 0;
+      return { name: itemName, points: points };
+    }
+    return null;
+  }).filter(item => item !== null);
+  return parsed;
 }
 
-// Row distribution for grouping
+// Custom row distribution for the wheel slices.
 function getRowDistribution(n) {
-  if (n === 0) return [];
-  if (n <= 4) return [n];
   switch (n) {
-    case 5: return [3,2];
-    case 6: return [3,3];
-    case 7: return [4,3];
-    case 8: return [4,4];
-    default:
-      let dist = [];
-      let remaining = n;
-      while (remaining >= 4) {
-        dist.push(4);
-        remaining -= 4;
-      }
-      if (remaining > 0) dist.push(remaining);
-      return dist;
+    case 1: return [1];
+    case 2: return [2];
+    case 3: return [3];
+    case 4: return [2, 2];
+    case 5: return [3, 2];
+    case 6: return [3, 3];
+    case 7: return [4, 3];
+    case 8: return [4, 4];
+    case 9: return [3, 3, 3];
+    case 10: return [4, 3, 3];
+  }
+  // Fallback: 5 per row
+  let rows = [];
+  let remaining = n;
+  const rowSize = 5;
+  while (remaining > rowSize) {
+    rows.push(rowSize);
+    remaining -= rowSize;
+  }
+  if (remaining > 0) rows.push(remaining);
+  return rows;
+}
+
+// Draw the wheel on the canvas
+function drawWheel() {
+  items = parseItems();
+  const totalItems = items.length;
+  const canvasSize = wheelCanvas.width;
+  const centerX = canvasSize / 2;
+  const centerY = canvasSize / 2;
+  const radius = canvasSize / 2 - 2;
+
+  ctx.clearRect(0, 0, canvasSize, canvasSize);
+
+  if (totalItems === 0) {
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
+    ctx.fillStyle = "#eee";
+    ctx.fill();
+    ctx.stroke();
+    return;
+  }
+
+  const sliceAngle = 2 * Math.PI / totalItems;
+  for (let i = 0; i < totalItems; i++) {
+    const startAngle = currentRotation + i * sliceAngle;
+    const endAngle = startAngle + sliceAngle;
+
+    ctx.beginPath();
+    ctx.moveTo(centerX, centerY);
+    ctx.arc(centerX, centerY, radius, startAngle, endAngle);
+    ctx.closePath();
+    ctx.fillStyle = getSliceColor(i, totalItems);
+    ctx.fill();
+    ctx.strokeStyle = "#333";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Draw slice label (item name)
+    ctx.save();
+    ctx.translate(centerX, centerY);
+    ctx.rotate(startAngle + sliceAngle / 2);
+    ctx.textAlign = "right";
+    ctx.fillStyle = "#000";
+    ctx.font = "bold 14px sans-serif";
+    ctx.fillText(items[i].name, radius - 10, 10);
+    ctx.restore();
   }
 }
 
-// ====== Items Table ======
-function addTableRow(labelValue = '', pointsValue = '') {
-  const tbody = itemsTable.querySelector('tbody');
-  const row = document.createElement('tr');
+// Helper for numeric dice colors: use a set of grayscale values
+function getSliceColor(index, total) {
+  const grays = ["#000", "#222", "#444", "#666", "#888", "#aaa", "#ccc"];
+  return grays[index % grays.length];
+}
 
-  // Label cell with placeholder
-  const labelTd = document.createElement('td');
-  const labelInput = document.createElement('input');
-  labelInput.type = 'text';
-  labelInput.value = labelValue;
-  labelInput.placeholder = 'Slice name';
-  labelTd.appendChild(labelInput);
-
-  // Points cell
-  const pointsTd = document.createElement('td');
-  const pointsInput = document.createElement('input');
-  pointsInput.type = 'number';
-  pointsInput.value = pointsValue;
-  pointsTd.appendChild(pointsInput);
-
-  // Remove button
-  const removeTd = document.createElement('td');
-  const removeBtn = document.createElement('button');
-  removeBtn.className = 'removeRowBtn';
-  removeBtn.textContent = 'X';
-  removeBtn.addEventListener('click', () => {
-    row.remove();
-  });
-  removeTd.appendChild(removeBtn);
-
-  row.appendChild(labelTd);
-  row.appendChild(pointsTd);
-  row.appendChild(removeTd);
-  tbody.appendChild(row);
-
-  // Press Enter in Label => go to Points
-  labelInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      pointsInput.focus();
-    }
-  });
-  // Press Enter in Points => add a new row
-  pointsInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      addTableRow('', '');
-      const allRows = itemsTable.querySelectorAll('tbody tr');
-      if (allRows.length) {
-        const lastRow = allRows[allRows.length - 1];
-        const newLabel = lastRow.cells[0].querySelector('input');
-        newLabel.focus();
+/* Teams functionality */
+// Returns custom row distribution for teams, based on user requirements:
+// 5 teams: first row 3, second row 2; 6 teams: 3+3; 8 teams: 4+4; etc.
+function getGroupRowDistribution(n) {
+  switch(n) {
+    case 1: return [1];
+    case 2: return [2];
+    case 3: return [3];
+    case 4: return [4];
+    case 5: return [3, 2];
+    case 6: return [3, 3];
+    case 7: return [4, 3];
+    case 8: return [4, 4];
+    default:
+      let arr = [];
+      let rem = n;
+      while(rem >= 4) {
+        arr.push(4);
+        rem -= 4;
       }
-    }
-  });
+      if(rem > 0) arr.push(rem);
+      return arr;
+  }
 }
 
-function parseItemsFromTable() {
-  items = [];
-  const rows = itemsTable.querySelectorAll('tbody tr');
-  rows.forEach(r => {
-    const labelInput  = r.cells[0].querySelector('input');
-    const pointsInput = r.cells[1].querySelector('input');
-    const label = labelInput.value.trim();
-    const pts   = parseInt(pointsInput.value, 10) || 0;
-
-    if (label && !excludedLabels.includes(label)) {
-      items.push({
-        label: label,
-        points: pts,
-        color: randomPastelColor()
-      });
-    }
-  });
-}
-
-// ====== Groups Logic ======
 function createGroups(n) {
   groups = [];
   for (let i = 0; i < n; i++) {
@@ -139,262 +164,141 @@ function createGroups(n) {
   }
 }
 
-function clearAllScores() {
-  groups.forEach(g => g.score = 0);
-  renderGroupsUI();
-}
-
 function renderGroupsUI() {
-  groupsContainer.innerHTML = '';
+  groupsContainer.innerHTML = "";
   if (groups.length === 0) {
-    turnIndicator.style.display = 'none'; // hide if 0 groups
-    return;
+    turnIndicator.style.display = "none";
   } else {
-    turnIndicator.style.display = 'inline';
+    turnIndicator.style.display = "inline";
   }
-
-  const dist = getRowDistribution(groups.length);
+  const dist = getGroupRowDistribution(groups.length);
   let index = 0;
-
   dist.forEach(rowCount => {
-    const rowDiv = document.createElement('div');
-    rowDiv.className = 'group-row';
-
+    const rowDiv = document.createElement("div");
+    rowDiv.className = "group-row";
     for (let i = 0; i < rowCount; i++) {
       const g = groups[index];
       index++;
-
-      const groupDiv = document.createElement('div');
-      groupDiv.className = 'group-input';
-
-      // highlight if it's the current group
+      const groupDiv = document.createElement("div");
+      groupDiv.className = "group-input";
       if (index - 1 === currentGroupIndex) {
-        groupDiv.classList.add('active-turn');
+        groupDiv.classList.add("active-turn");
       }
-
-      // name input
-      const nameInput = document.createElement('input');
-      nameInput.type = 'text';
+      const nameInput = document.createElement("input");
+      nameInput.type = "text";
       nameInput.value = g.name;
-      nameInput.className = 'group-name';
-      nameInput.addEventListener('input', () => {
+      nameInput.className = "group-name";
+      nameInput.addEventListener("input", () => {
         g.name = nameInput.value;
         updateTurnIndicator();
       });
-
-      // score display
-      const scoreEl = document.createElement('div');
-      scoreEl.className = 'group-score';
+      const scoreEl = document.createElement("div");
+      scoreEl.className = "group-score";
       scoreEl.textContent = g.score;
       g.scoreEl = scoreEl;
-
       groupDiv.appendChild(nameInput);
       groupDiv.appendChild(scoreEl);
       rowDiv.appendChild(groupDiv);
     }
     groupsContainer.appendChild(rowDiv);
   });
-
   updateTurnIndicator();
 }
 
-function highlightCurrentGroup() {
-  if (!groups.length) {
-    turnIndicator.style.display = 'none';
-    return;
-  }
-  turnIndicator.style.display = 'inline';
-
-  const groupBoxes = groupsContainer.querySelectorAll('.group-input');
-  groupBoxes.forEach(box => box.classList.remove('active-turn'));
-  if (groupBoxes[currentGroupIndex]) {
-    groupBoxes[currentGroupIndex].classList.add('active-turn');
-  }
-}
-
-function updateGroupScoreDisplay(groupIndex) {
-  if (groups[groupIndex] && groups[groupIndex].scoreEl) {
-    groups[groupIndex].scoreEl.textContent = groups[groupIndex].score;
-  }
-}
-
 function updateTurnIndicator() {
-  if (!groups.length) {
-    turnIndicator.style.display = 'none';
+  if (groups.length === 0) {
+    turnIndicator.style.display = "none";
     return;
   }
-  turnIndicator.style.display = 'inline';
-  const g = groups[currentGroupIndex];
-  turnIndicator.textContent = `${g.name}'s Turn`;
+  turnIndicator.style.display = "inline";
+  turnIndicator.textContent = `${groups[currentGroupIndex].name}'s Turn`;
 }
 
-// ====== Wheel Drawing ======
-function drawWheel() {
-  ctx.clearRect(0, 0, wheelCanvas.width, wheelCanvas.height);
-
-  if (!items.length) {
-    ctx.beginPath();
-    ctx.arc(250, 250, 250, 0, 2 * Math.PI);
-    ctx.fillStyle = '#eee';
-    ctx.fill();
-    ctx.strokeStyle = '#333';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    return;
-  }
-
-  const sliceAngle = 360 / items.length;
-  for (let i = 0; i < items.length; i++) {
-    const startDeg = i * sliceAngle + currentRotation;
-    const endDeg   = startDeg + sliceAngle;
-    const startRad = (startDeg * Math.PI) / 180;
-    const endRad   = (endDeg   * Math.PI) / 180;
-
-    // slice
-    ctx.beginPath();
-    ctx.moveTo(250, 250);
-    ctx.arc(250, 250, 250, startRad, endRad);
-    ctx.fillStyle = items[i].color;
-    ctx.fill();
-    ctx.strokeStyle = '#333';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-
-    // label
-    ctx.save();
-    ctx.translate(250, 250);
-    ctx.rotate((startRad + endRad) / 2);
-    ctx.textAlign = 'right';
-    ctx.fillStyle = '#000';
-    ctx.font = '16px sans-serif';
-    ctx.fillText(items[i].label, 220, 5);
-    ctx.restore();
-  }
-
-  // outer circle
-  ctx.beginPath();
-  ctx.arc(250, 250, 250, 0, 2 * Math.PI);
-  ctx.strokeStyle = '#333';
-  ctx.lineWidth = 2;
-  ctx.stroke();
+function clearAllScores() {
+  groups.forEach(g => g.score = 0);
+  renderGroupsUI();
 }
 
-// ====== Spin Logic ======
-function spinWheel() {
-  if (isSpinning) return;
-
-  // If there's a pending removal, exclude that label
-  if (pendingRemoval && removeCb.checked) {
-    if (!excludedLabels.includes(pendingRemoval)) {
-      excludedLabels.push(pendingRemoval);
-    }
-  }
-  pendingRemoval = null;
-
-  parseItemsFromTable();
-  if (!items.length) {
-    alert('No items to spin for!');
-    drawWheel();
-    return;
-  }
-
-  isSpinning = true;
-  // remove arrow from the text => just "Result:"
-  resultEl.textContent = 'Result:';
-
-  spinSound.currentTime = 0;
-  spinSound.play();
-
-  // 3 full spins + up to 360 deg
-  const extraDegrees = 1080 + Math.floor(Math.random() * 360);
-  const startRotation = currentRotation;
-  const endRotation   = currentRotation + extraDegrees;
-  const duration      = 3000;
-  const startTime     = performance.now();
-
-  function animateSpin(now) {
-    const elapsed  = now - startTime;
-    const progress = Math.min(elapsed / duration, 1);
-
-    // ease-out cubic
-    const t = 1 - Math.pow(1 - progress, 3);
-    const current = startRotation + (endRotation - startRotation) * t;
-    currentRotation = current % 360;
-
-    drawWheel();
-
-    if (progress < 1) {
-      requestAnimationFrame(animateSpin);
-    } else {
-      // done spinning
-      isSpinning = false;
-      spinSound.pause();
-      resultSound.currentTime = 0;
-      resultSound.play();
-
-      const sliceAngle = 360 / items.length;
-      let pointerAngle = (360 - currentRotation) % 360;
-      let index = Math.floor(pointerAngle / sliceAngle);
-      if (index < 0) index = 0;
-      if (index >= items.length) index = items.length - 1;
-
-      const landedItem = items[index];
-      if (landedItem) {
-        // If points>0, show (X pts); otherwise omit
-        const ptsStr = landedItem.points > 0 ? ` (${landedItem.points} pts)` : '';
-        resultEl.textContent = `Result: ${landedItem.label}${ptsStr}`;
-
-        // if we have groups, add points
-        if (groups.length > 0 && groups[currentGroupIndex]) {
-          groups[currentGroupIndex].score += landedItem.points;
-          updateGroupScoreDisplay(currentGroupIndex);
-        }
-        pendingRemoval = landedItem.label;
-      }
-
-      // next group's turn
-      if (groups.length > 0) {
-        currentGroupIndex = (currentGroupIndex + 1) % groups.length;
-      }
-      updateTurnIndicator();
-      highlightCurrentGroup();
-    }
-  }
-
-  requestAnimationFrame(animateSpin);
-}
-
-// ====== Event Listeners ======
-addRowBtn.addEventListener('click', () => {
-  addTableRow('', '');
-});
-
-updateWheelBtn.addEventListener('click', () => {
-  excludedLabels = [];
-  pendingRemoval = null;
-  parseItemsFromTable();
-  drawWheel();
-});
-
-setGroupsBtn.addEventListener('click', () => {
+function createOrUpdateTeams() {
   const n = parseInt(numGroupsInput.value, 10) || 0;
   createGroups(n);
   currentGroupIndex = 0;
   renderGroupsUI();
-  parseItemsFromTable();
-  drawWheel();
-});
+}
 
-clearAllBtn.addEventListener('click', () => {
-  clearAllScores();
-});
+// Spin the wheel with animation
+function spinWheel() {
+  if (isSpinning) return;
+  items = parseItems();
+  if (items.length === 0) {
+    alert("No items entered!");
+    return;
+  }
+  isSpinning = true;
+  spinSound.currentTime = 0;
+  spinSound.play();
 
-spinBtn.addEventListener('click', spinWheel);
+  // Spin for 3 seconds: at least 3 full rotations plus a random extra.
+  const extraDegrees = 1080 + Math.floor(Math.random() * 360);
+  const extraRads = extraDegrees * Math.PI / 180;
+  const targetRotation = currentRotation + extraRads;
+  const duration = 3000;
+  const startTime = performance.now();
 
-// ====== Initial Setup ======
-addTableRow('', '10'); // single row w/ placeholder label, 10 points
-createGroups(2);       // default 2 groups
-renderGroupsUI();
+  function animateSpin(now) {
+    const elapsed = now - startTime;
+    const progress = Math.min(elapsed / duration, 1);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    // Interpolate between currentRotation and targetRotation
+    currentRotation = currentRotation + (targetRotation - currentRotation) * eased;
+    drawWheel();
+    if (progress < 1) {
+      requestAnimationFrame(animateSpin);
+    } else {
+      isSpinning = false;
+      spinSound.pause();
+      bellSound.currentTime = 0;
+      bellSound.play();
 
-parseItemsFromTable();
+      // Determine winning slice.
+      const totalItems = items.length;
+      const sliceAngle = 2 * Math.PI / totalItems;
+      // Assume pointer at top center (adjust by π/2 since 0 is to the right)
+      let pointerAngle = (2 * Math.PI - currentRotation + Math.PI / 2) % (2 * Math.PI);
+      let winningIndex = Math.floor(pointerAngle / sliceAngle);
+      if (winningIndex < 0) winningIndex = 0;
+      if (winningIndex >= totalItems) winningIndex = totalItems - 1;
+
+      const winningItem = items[winningIndex];
+      resultEl.textContent = "Result: " + winningItem.name + (winningItem.points > 0 ? " (" + winningItem.points + " pts)" : "");
+
+      // Add points to current team (if any teams exist)
+      if (groups.length > 0) {
+        groups[currentGroupIndex].score += winningItem.points;
+        renderGroupsUI();
+        currentGroupIndex = (currentGroupIndex + 1) % groups.length;
+        updateTurnIndicator();
+      }
+
+      // If removal checkbox is checked, remove winning item from the textarea.
+      const removeCheckbox = document.getElementById("removeCheckbox");
+      if (removeCheckbox.checked) {
+        let lines = itemsInput.value.split("\n");
+        lines = lines.filter(line => !line.startsWith(winningItem.name));
+        itemsInput.value = lines.join("\n");
+        drawWheel();
+      }
+    }
+  }
+  requestAnimationFrame(animateSpin);
+}
+
+// Event Listeners
+spinBtn.addEventListener("click", spinWheel);
+itemsInput.addEventListener("input", drawWheel);
+document.getElementById("setGroupsBtn").addEventListener("click", createOrUpdateTeams);
+document.getElementById("clearAllBtn").addEventListener("click", clearAllScores);
+
+// Initialization
+createOrUpdateTeams();
 drawWheel();

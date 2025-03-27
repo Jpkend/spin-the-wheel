@@ -1,296 +1,225 @@
-/*********************************************************************
- * script.js
- *
- * Spin the Wheel Tool with Teams using a single textarea input.
- * Each line in the textarea should be formatted as:
- *   Item name (points)
- * e.g., "What is your name? (100)"
- *
- * The wheel spins for 4 seconds with pastel-colored slices.
- * The spin.mp3 sound plays when spinning.
- * Teams (groups) functionality is included; default groups = 0.
- * Groups controls are displayed to the right of the items input.
- * The wheel is larger (600x600).
- *********************************************************************/
+// script.js
 
-// DOM Elements
-const itemsInput = document.getElementById("itemsInput");
-const spinBtn = document.getElementById("spinBtn");
-const wheelCanvas = document.getElementById("wheel");
-const resultEl = document.getElementById("result");
-const spinSound = document.getElementById("spinSound");
-const bellSound = document.getElementById("bellSound");
-const numGroupsInput = document.getElementById("numGroupsInput");
-const setGroupsBtn = document.getElementById("setGroupsBtn");
-const clearAllBtn = document.getElementById("clearAllBtn");
-const turnIndicator = document.getElementById("turnIndicator");
-const groupsContainer = document.getElementById("groupsContainer");
+let currentAngle = 0;
+let spinning = false;
+let items = [];
+let currentGroupTurn = 0;
+let removeOnSpin = false;
+let removedIndices = [];
+let itemColors = [];
+let lastWinner = null;
+let soundEnabled = true;
 
-const ctx = wheelCanvas.getContext("2d");
+window.addEventListener('DOMContentLoaded', () => {
+  const itemsControl = document.getElementById('itemsControl');
+  const settingsControl = document.getElementById('settingsControl');
+  const groupsControl = document.getElementById('groupsControl');
 
-let items = []; // array of objects { name, points, color }
-let currentRotation = 0; // in radians
-let isSpinning = false;
-let pendingRemoval = null; // winning item's name to remove on next spin if checked
+  if (itemsControl && settingsControl && groupsControl) {
+    itemsControl.parentNode.insertBefore(settingsControl, groupsControl);
+  }
 
-// Teams (groups)
-let groups = []; // array of { name, score, scoreEl }
-let currentGroupIndex = 0;
+  settingsControl.innerHTML = `
+  <h3>Settings</h3>
+  <label><input type="checkbox" id="removeCheckbox"> Remove spin result</label><br>
+  <label><input type="checkbox" id="soundToggle" checked> Sound on</label><br>
+  <button id="resetRemovedBtn" style="width: 120px;">Reset Removed</button>
+`;
 
-// Pastel color generator
-function getRandomPastelColor() {
-  const hue = Math.floor(Math.random() * 360);
-  return `hsl(${hue}, 70%, 80%)`;
+  const removeCheckbox = document.getElementById('removeCheckbox');
+  const resetBtn = document.getElementById('resetRemovedBtn');
+  const soundToggle = document.getElementById('soundToggle');
+
+  removeCheckbox.addEventListener('change', e => removeOnSpin = e.target.checked);
+  resetBtn.addEventListener('click', () => { removedIndices = []; lastWinner = null; updateWheel(); });
+  soundToggle.addEventListener('change', () => { soundEnabled = soundToggle.checked; });
+
+  const spinControl = document.getElementById('spinControl');
+  const resultDisplay = document.getElementById('result');
+  spinControl.appendChild(resultDisplay);
+});
+
+const canvas = document.getElementById('wheel');
+const ctx = canvas.getContext('2d');
+const spinBtn = document.getElementById('spinBtn');
+const itemsInput = document.getElementById('itemsInput');
+const resultDisplay = document.getElementById('result');
+const spinSound = document.getElementById('spinSound');
+const resultSound = document.getElementById('resultSound');
+const setGroupsBtn = document.getElementById('setGroupsBtn');
+const clearAllBtn = document.getElementById('clearAllBtn');
+const numGroupsInput = document.getElementById('numGroupsInput');
+const groupsContainer = document.getElementById('groupsContainer');
+
+function degToRad(deg) { return deg * Math.PI / 180; }
+function randomPastel() { return `hsl(${Math.floor(Math.random()*360)},70%,85%)`; }
+function wrapText(ctx, text, maxWidth) {
+  const words = text.split(' ');
+  let line = '';
+  const lines = [];
+  for (const word of words) {
+    const test = line ? `${line} ${word}` : word;
+    if (ctx.measureText(test).width > maxWidth && line) { lines.push(line); line = word; }
+    else line = test;
+  }
+  lines.push(line);
+  return lines;
 }
 
-// Parse textarea input. Expected format: "Item (points)"
-function parseItems() {
-  const input = itemsInput.value;
-  const lines = input.split("\n").map(line => line.trim()).filter(line => line.length > 0);
-  const parsed = lines.map(line => {
-    const match = line.match(/^(.*?)(?:\s*\((\d+)\))?$/);
-    if (match) {
-      const itemName = match[1].trim();
-      const points = match[2] ? parseInt(match[2], 10) : 0;
-      return { name: itemName, points: points, color: getRandomPastelColor() };
+function getItems() { return itemsInput.value.split('\n').map(l=>l.trim()).filter(Boolean); }
+function parseItem(str) { const m = str.match(/^(.*)\s*\((\d+)\)/); return m ? { text: m[1].trim(), points: +m[2] } : { text: str, points: 0 }; }
+function getActiveIndices() { return items.map((_,i) => i).filter(i => !removedIndices.includes(i)); }
+
+function drawWheel(rotation) {
+  const w = canvas.width, h = canvas.height, cx = w/2, cy = h/2, r = Math.min(cx,cy) - 10;
+  ctx.clearRect(0,0,w,h);
+  const active = getActiveIndices(); if (!active.length) return;
+  const slice = 360 / active.length;
+
+  active.forEach((orig,i) => {
+    const midAngle = degToRad(rotation + i*slice + slice/2);
+    ctx.fillStyle = itemColors[orig] || randomPastel();
+    ctx.beginPath(); ctx.moveTo(cx,cy);
+    ctx.arc(cx,cy,r,degToRad(rotation + i*slice), degToRad(rotation + (i+1)*slice));
+    ctx.fill(); ctx.stroke();
+
+    const parsed = parseItem(items[orig]);
+    ctx.save(); ctx.translate(cx, cy); ctx.rotate(midAngle);
+
+    const maxWidth = r * 0.5;
+    const halfSliceRad = degToRad(slice/2);
+    const maxHeight = 2 * maxWidth * Math.sin(halfSliceRad);
+    let fontSize = 24; const minFont = 10;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#333';
+
+    ctx.font = `${fontSize}px Poppins, sans-serif`;
+    let lines = wrapText(ctx, parsed.text, maxWidth);
+    let lineHeight = fontSize * 1.2;
+    while (fontSize > minFont && (lines.some(l => ctx.measureText(l).width > maxWidth) || lines.length * lineHeight > maxHeight)) {
+      fontSize--; ctx.font = `${fontSize}px Poppins, sans-serif`; lines = wrapText(ctx, parsed.text, maxWidth); lineHeight = fontSize * 1.2;
     }
-    return null;
-  }).filter(item => item !== null);
-  return parsed;
-}
-
-// Custom row distribution for 1–10 slices; fallback for >10
-function getRowDistribution(n) {
-  switch(n) {
-    case 1: return [1];
-    case 2: return [2];
-    case 3: return [3];
-    case 4: return [2, 2];
-    case 5: return [3, 2];
-    case 6: return [3, 3];
-    case 7: return [4, 3];
-    case 8: return [4, 4];
-    case 9: return [3, 3, 3];
-    case 10: return [4, 3, 3];
-  }
-  let rows = [];
-  let remaining = n;
-  const rowSize = 5;
-  while (remaining > rowSize) {
-    rows.push(rowSize);
-    remaining -= rowSize;
-  }
-  if (remaining > 0) rows.push(remaining);
-  return rows;
-}
-
-// Draw the wheel on the canvas
-function drawWheel() {
-  items = parseItems();
-  const totalItems = items.length;
-  const canvasSize = wheelCanvas.width;
-  const centerX = canvasSize / 2;
-  const centerY = canvasSize / 2;
-  const radius = canvasSize / 2 - 10; // added padding
-
-  ctx.clearRect(0, 0, canvasSize, canvasSize);
-
-  if (totalItems === 0) {
-    ctx.beginPath();
-    ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
-    ctx.fillStyle = "#eee";
-    ctx.fill();
-    ctx.stroke();
-    return;
-  }
-
-  const sliceAngle = 2 * Math.PI / totalItems;
-  for (let i = 0; i < totalItems; i++) {
-    const startAngle = currentRotation + i * sliceAngle;
-    const endAngle = startAngle + sliceAngle;
-
-    ctx.beginPath();
-    ctx.moveTo(centerX, centerY);
-    ctx.arc(centerX, centerY, radius, startAngle, endAngle);
-    ctx.closePath();
-    ctx.fillStyle = items[i].color;
-    ctx.fill();
-    ctx.strokeStyle = "#333";
-    ctx.lineWidth = 2;
-    ctx.stroke();
-
-    // Draw text label in the slice
-    ctx.save();
-    ctx.translate(centerX, centerY);
-    ctx.rotate(startAngle + sliceAngle / 2);
-    ctx.textAlign = "right";
-    ctx.fillStyle = "#000";
-    ctx.font = "bold 16px sans-serif";
-    ctx.fillText(items[i].name, radius - 20, 10);
+    lines.forEach((line,j) => ctx.fillText(line, r * 0.5, (j - (lines.length - 1) / 2) * lineHeight));
     ctx.restore();
-  }
-}
 
-// Teams functionality
-function getGroupRowDistribution(n) {
-  switch(n) {
-    case 1: return [1];
-    case 2: return [2];
-    case 3: return [3];
-    case 4: return [4];
-    case 5: return [3, 2];
-    case 6: return [3, 3];
-    case 7: return [4, 3];
-    case 8: return [4, 4];
-    default:
-      let arr = [];
-      let remaining = n;
-      const rowSize = 4;
-      while(remaining >= rowSize) {
-        arr.push(rowSize);
-        remaining -= rowSize;
-      }
-      if(remaining > 0) arr.push(remaining);
-      return arr;
-  }
-}
-
-function createGroups(n) {
-  groups = [];
-  for (let i = 0; i < n; i++) {
-    groups.push({ name: `Group ${i+1}`, score: 0, scoreEl: null });
-  }
-}
-
-function renderGroupsUI() {
-  groupsContainer.innerHTML = "";
-  if (groups.length === 0) {
-    turnIndicator.style.display = "none";
-  } else {
-    turnIndicator.style.display = "inline";
-  }
-  const dist = getGroupRowDistribution(groups.length);
-  let index = 0;
-  dist.forEach(rowCount => {
-    const rowDiv = document.createElement("div");
-    rowDiv.className = "group-row";
-    for (let i = 0; i < rowCount; i++) {
-      const g = groups[index];
-      index++;
-      const groupDiv = document.createElement("div");
-      groupDiv.className = "group-input";
-      if (index - 1 === currentGroupIndex) {
-        groupDiv.classList.add("active-turn");
-      }
-      const nameInput = document.createElement("input");
-      nameInput.type = "text";
-      nameInput.value = g.name;
-      nameInput.className = "group-name";
-      nameInput.addEventListener("input", () => {
-        g.name = nameInput.value;
-        updateTurnIndicator();
-      });
-      const scoreEl = document.createElement("div");
-      scoreEl.className = "group-score";
-      scoreEl.textContent = g.score;
-      g.scoreEl = scoreEl;
-      groupDiv.appendChild(nameInput);
-      groupDiv.appendChild(scoreEl);
-      rowDiv.appendChild(groupDiv);
+    if (parsed.points) {
+      const x = cx + Math.cos(midAngle) * (r * 0.95);
+      const y = cy + Math.sin(midAngle) * (r * 0.95);
+      ctx.save(); ctx.translate(x, y); ctx.rotate(midAngle + Math.PI/2);
+      ctx.fillStyle = '#333'; ctx.font = 'bold 16px Poppins, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(parsed.points, 0, 0);
+      ctx.restore();
     }
-    groupsContainer.appendChild(rowDiv);
   });
-  updateTurnIndicator();
+
+  ctx.fillStyle = 'red'; ctx.beginPath(); ctx.arc(cx + r + 10, cy, 8, 0, Math.PI*2); ctx.fill();
 }
 
-function updateTurnIndicator() {
-  if (groups.length === 0) {
-    turnIndicator.style.display = "none";
-    return;
+function updateWheel() { items = getItems(); itemColors = items.map(() => randomPastel()); drawWheel(currentAngle); }
+
+function finishSpin(finalAngle, active) {
+  spinning = false; spinBtn.disabled = false;
+  currentAngle = finalAngle % 360;
+  const slice = 360 / active.length;
+  const win = Math.floor(((-currentAngle + 360) % 360) / slice);
+  const orig = active[win]; lastWinner = orig;
+
+  const parsed = parseItem(items[orig]);
+  resultDisplay.innerHTML = `Result: ${parsed.text}`;
+
+  const groups = groupsContainer.querySelectorAll('.group-score');
+  if (groups.length > 0) {
+    const currentGroup = groups[currentGroupTurn];
+    const currentScore = parseInt(currentGroup.textContent) || 0;
+    currentGroup.textContent = currentScore + parsed.points;
+
+    groupsContainer.querySelectorAll('.group-input').forEach(g => g.classList.remove('active-turn'));
+    currentGroupTurn = (currentGroupTurn + 1) % groups.length;
+    groupsContainer.children[currentGroupTurn].classList.add('active-turn');
   }
-  turnIndicator.style.display = "inline";
-  turnIndicator.textContent = `${groups[currentGroupIndex].name}'s Turn`;
+
+  updateWheel();
+  if (soundEnabled) resultSound.play();
 }
 
-function clearAllScores() {
-  groups.forEach(g => g.score = 0);
-  renderGroupsUI();
+function spin() {
+  if (spinning) return;
+  if (removeOnSpin && lastWinner !== null) { removedIndices.push(lastWinner); lastWinner = null; updateWheel(); }
+  items = getItems(); if (!items.length) { alert('Enter at least one item.'); return; }
+  spinning = true; spinBtn.disabled = true; resultDisplay.textContent='Result:';
+  if (soundEnabled) spinSound.play();
+  const active = getActiveIndices(); if (!active.length) { alert('No active slices!'); spinning=false; spinBtn.disabled=false; return; }
+  const total = 360*(3+Math.floor(Math.random()*4))+Math.random()*360; const start=performance.now();
+  function animate(now) { const p=Math.min((now-start)/5000,1); drawWheel(currentAngle+total*(1-Math.pow(1-p,3))); if(p<1) requestAnimationFrame(animate); else finishSpin(currentAngle+total, active); }
+  requestAnimationFrame(animate);
 }
 
-function createOrUpdateTeams() {
-  const n = parseInt(numGroupsInput.value, 10) || 0;
-  createGroups(n);
-  currentGroupIndex = 0;
-  renderGroupsUI();
-}
+function createGroups() {
+  const n = +numGroupsInput.value;
+  groupsContainer.innerHTML = '';
+  if (n <= 0) return;
+  currentGroupTurn = 0;
+  for (let i = 0; i < n; i++) {
+    const box = document.createElement('div');
+    box.className = 'group-input';
 
-// Spin the wheel with animation
-function spinWheel() {
-  if (isSpinning) return;
-  items = parseItems();
-  if (items.length === 0) {
-    alert("No items entered!");
-    return;
+    const name = document.createElement('div');
+    name.className = 'group-name';
+    name.textContent = `Group ${i+1}`;
+    name.addEventListener('dblclick', () => {
+      const nm = prompt('Enter new group name', name.textContent);
+      if (nm) name.textContent = nm;
+    });
+
+    const score = document.createElement('div');
+    score.className = 'group-score';
+    score.textContent = '0';
+
+    box.appendChild(name);
+    box.appendChild(score);
+    groupsContainer.appendChild(box);
   }
-  isSpinning = true;
-  spinSound.currentTime = 0;
-  spinSound.play();
-
-  // Spin for 4 seconds: 1440 degrees (4 rotations) plus a random extra
-  const extraDegrees = 1440 + Math.floor(Math.random() * 360);
-  const extraRads = extraDegrees * Math.PI / 180;
-  const targetRotation = currentRotation + extraRads;
-  const duration = 4000;
-  const startTime = performance.now();
-
-  function animateSpin(now) {
-    const elapsed = now - startTime;
-    const progress = Math.min(elapsed / duration, 1);
-    const eased = 1 - Math.pow(1 - progress, 3);
-    currentRotation = currentRotation + (targetRotation - currentRotation) * eased;
-    drawWheel();
-    if (progress < 1) {
-      requestAnimationFrame(animateSpin);
-    } else {
-      isSpinning = false;
-      spinSound.pause();
-      bellSound.currentTime = 0;
-      bellSound.play();
-
-      const totalItems = items.length;
-      const sliceAngle = 2 * Math.PI / totalItems;
-      let pointerAngle = (2 * Math.PI - currentRotation + Math.PI/2) % (2 * Math.PI);
-      let winningIndex = Math.floor(pointerAngle / sliceAngle);
-      if (winningIndex < 0) winningIndex = 0;
-      if (winningIndex >= totalItems) winningIndex = totalItems - 1;
-      const winningItem = items[winningIndex];
-      resultEl.textContent = "Result: " + winningItem.name + (winningItem.points > 0 ? " (" + winningItem.points + " pts)" : "");
-
-      if (groups.length > 0) {
-        groups[currentGroupIndex].score += winningItem.points;
-        renderGroupsUI();
-        currentGroupIndex = (currentGroupIndex + 1) % groups.length;
-        updateTurnIndicator();
-      }
-
-      const removeCheckbox = document.getElementById("removeCheckbox");
-      if (removeCheckbox.checked) {
-        let lines = itemsInput.value.split("\n");
-        lines = lines.filter(line => !line.startsWith(winningItem.name));
-        itemsInput.value = lines.join("\n");
-        drawWheel();
-      }
-    }
-  }
-  requestAnimationFrame(animateSpin);
+  if (groupsContainer.firstChild) groupsContainer.firstChild.classList.add('active-turn');
 }
 
-// Event Listeners
-spinBtn.addEventListener("click", spinWheel);
-itemsInput.addEventListener("input", drawWheel);
-setGroupsBtn.addEventListener("click", createOrUpdateTeams);
-clearAllBtn.addEventListener("click", clearAllScores);
+function clearAllPoints(){ groupsContainer.querySelectorAll('.group-score').forEach(e => e.textContent = '0'); }
 
-// Initialization
-createOrUpdateTeams(); // default groups = 0
-drawWheel();
+spinBtn.addEventListener('click', spin);
+itemsInput.addEventListener('input', updateWheel);
+setGroupsBtn.addEventListener('click', createGroups);
+clearAllBtn.addEventListener('click', clearAllPoints);
+
+updateWheel();
+
+function createGroups() {
+  let n = +numGroupsInput.value;
+  if (n > 8) n = 8; // enforce max in code
+  groupsContainer.innerHTML = '';
+  if (n <= 0) return;
+
+  currentGroupTurn = 0;
+
+  for (let i = 0; i < n; i++) {
+    const box = document.createElement('div');
+    box.className = 'group-input';
+
+    const name = document.createElement('div');
+    name.className = 'group-name';
+    name.textContent = `Group ${i+1}`;
+    name.addEventListener('dblclick', () => {
+      const nm = prompt('Enter new group name', name.textContent);
+      if (nm) name.textContent = nm;
+    });
+
+    const score = document.createElement('div');
+    score.className = 'group-score';
+    score.textContent = '0';
+
+    box.appendChild(name);
+    box.appendChild(score);
+    groupsContainer.appendChild(box);
+  }
+
+  if (groupsContainer.firstChild) {
+    groupsContainer.firstChild.classList.add('active-turn');
+  }
+}

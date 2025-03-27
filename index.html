@@ -2,51 +2,47 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Spin the Wheel Tool</title>
+  <title>Spin the Wheel</title>
   <link rel="stylesheet" href="style.css">
-  <!-- Modern font -->
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet">
 </head>
 <body>
-  <h1>Spin the Wheel Tool</h1>
+  <h1>🛞 Spin the Wheel 🛞</h1>
 
-  <!-- Audio elements -->
   <audio id="spinSound" src="spin.mp3" preload="auto"></audio>
-  <audio id="bellSound" src="bell.mp3" preload="auto"></audio>
+  <audio id="resultSound" src="result.mp3" preload="auto"></audio>
 
-  <!-- Top controls container with two columns -->
   <div id="topControls">
     <div id="itemsControl">
-      <label for="itemsInput">Items (one per line; add points in () optionally):</label>
-      <textarea id="itemsInput" placeholder="Enter one item per line.
-Optionally add points in parentheses.
-Example: What is your name? (100)"></textarea>
+      <h3>Items</h3>
+      <textarea id="itemsInput" placeholder="Enter one item per line. Add points in parentheses.
+For example: Elephant (50)"></textarea>
     </div>
+  
+    <div id="settingsControl">
+      <h3>Settings</h3>
+    </div>
+  
     <div id="groupsControl">
+      <h3>Groups</h3>
       <div class="group-settings">
-        <label for="numGroupsInput">Number of Groups:</label>
-        <input type="number" id="numGroupsInput" min="0" value="0">
-        <button id="setGroupsBtn">Set Groups</button>
-        <button id="clearAllBtn">Clear All Points</button>
+        <label for="numGroupsInput">Number of groups:</label>
+        <input type="number" id="numGroupsInput" min="0" max="8" value="0">
+        <button id="setGroupsBtn">Create</button>
+        <button id="clearAllBtn">Clear Points</button>
         <div id="turnIndicator"></div>
       </div>
+      <div id="groupsContainer"></div>
     </div>
   </div>
-
-  <!-- Spin button -->
+  
   <div id="spinControl">
     <button id="spinBtn">Spin</button>
-  </div>
+    <div id="result">Result:</div>
+  </div>  
 
-  <!-- Wheel and result container -->
   <div id="wheelContainer">
     <canvas id="wheel" width="600" height="600"></canvas>
-    <div id="result">Result: </div>
   </div>
-
-  <!-- Groups container (if teams exist) -->
-  <div id="groupsContainer"></div>
 
   <script src="script.js"></script>
 </body>
